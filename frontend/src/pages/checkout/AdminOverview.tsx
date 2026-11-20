@@ -8,7 +8,8 @@ import { displayDay, formatMoney, shiftDay, shopDay } from '../../lib/business';
 import { getAdminAuditEvents, getPendingLeaveCount } from '../../services/adminOverviewService';
 import { getSalesPage, getSalesReport, paymentName, type Product, type Shop } from '../../services/checkoutService';
 import { getAttendance, getCustomers, getPayrollRuns, getStaffDirectory } from '../../services/relationsService';
-import { Empty, LoadError, ProductPhoto, useData } from './WorkspaceUI';
+import { Empty, LoadError, useData } from './WorkspaceUI';
+import CatalogCard from './CatalogCard';
 import './admin-overview.css';
 
 export type AdminDestination = 'checkout' | 'sales' | 'inventory' | 'customers' | 'reports' | 'staff' | 'wages' | 'settings';
@@ -207,15 +208,13 @@ export default function AdminOverview({ shop, branch, branchName, revision, cata
     <div className="pos-admin-major">
       <Panel title="Top products" subtitle="Sales value and units sold in the selected period" icon={Boxes}
         action={<LinkButton onClick={() => navigate('reports')}>Reports</LinkButton>}>
-        {reportRead?.products.length ? <ul className="pos-simple-list">{reportRead.products.slice(0, 5).map(item => {
+        {reportRead?.products.length ? <div className="pos-dashboard-catalog">{reportRead.products.slice(0, 5).map(item => {
           const product = catalog?.find(entry => entry.id === item.product_id);
-          return <li key={item.product_id ?? item.name}>
-            {product ? <button type="button" className="pos-table-product pos-product-link" onClick={() => onProduct(product.id)}>
-              <ProductPhoto image={product.image} /><span><strong>{item.name}</strong><small>{item.quantity} sold</small></span>
-            </button> : <span><strong>{item.name}</strong><small>{item.quantity} sold</small></span>}
-            <strong className="pos-number">{money(item.revenue)}</strong>
-          </li>;
-        })}</ul> : <Empty>{report.loading ? 'Loading products…' : report.error ? 'Product rankings unavailable.' : 'No products sold in this period.'}</Empty>}
+          return product ? <CatalogCard key={product.id} product={product} currency={shop.currency}
+            metric={`${item.quantity} sold · ${money(item.revenue)} revenue`} open={() => onProduct(product.id)} />
+            : <article className="pos-catalog-archived" key={item.product_id ?? item.name}>
+              <strong>{item.name}</strong><small>{item.quantity} sold · {money(item.revenue)} revenue</small></article>;
+        })}</div> : <Empty>{report.loading ? 'Loading products…' : report.error ? 'Product rankings unavailable.' : 'No products sold in this period.'}</Empty>}
       </Panel>
       <Panel title="Staff sales" subtitle="Completed sales by cashier in the selected period" icon={UserCheck}>
         {reportRead?.staff.length ? <ul className="pos-simple-list">{reportRead.staff.slice(0, 5).map(item =>
@@ -228,12 +227,8 @@ export default function AdminOverview({ shop, branch, branchName, revision, cata
     <div className="pos-admin-lower">
       <Panel title="Stock watchlist" subtitle="At or below reorder level" icon={Package}
         action={<LinkButton onClick={() => navigate('inventory', { stockAlerts: true })}>Inventory</LinkButton>}>
-        {low?.length ? <ul className="pos-simple-list">{low.slice(0, 6).map(item => <li key={item.id}>
-          <button type="button" className="pos-table-product pos-product-link" onClick={() => onProduct(item.id)}>
-            <ProductPhoto image={item.image} /><span><strong>{item.name}</strong><small>{item.sku || 'Reorder at ' + item.reorder_level}</small></span>
-          </button>
-          <span className={`pos-badge ${item.stock <= 0 ? 'pos-tone-bad' : 'pos-tone-warn'}`}>{item.stock} left</span>
-        </li>)}</ul> : <Empty>{catalogLoading ? 'Loading stock…' : catalogError ? 'Stock watchlist unavailable.' : 'No products need reordering.'}</Empty>}
+        {low?.length ? <div className="pos-dashboard-catalog">{low.slice(0, 4).map(item =>
+          <CatalogCard key={item.id} product={item} currency={shop.currency} open={() => onProduct(item.id)} />)}</div> : <Empty>{catalogLoading ? 'Loading stock…' : catalogError ? 'Stock watchlist unavailable.' : 'No products need reordering.'}</Empty>}
       </Panel>
 
       <Panel title="Staff roles" subtitle="Active accounts across all branches" icon={Users}

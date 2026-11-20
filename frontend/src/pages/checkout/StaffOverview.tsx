@@ -6,7 +6,8 @@ import { displayDay, formatMoney, shiftDay, shopDay, timeOfDay } from '../../lib
 import { getBranchStockActivity, getSalesPage, getSalesReport, getStockLedger, paymentName,
   type Branch, type Product, type Shop } from '../../services/checkoutService';
 import { getAttendance, getEmployment, getLeave, getOpenClock, getOwnPay } from '../../services/relationsService';
-import { Empty, LoadError, ProductPhoto, useData } from './WorkspaceUI';
+import { Empty, LoadError, useData } from './WorkspaceUI';
+import CatalogCard from './CatalogCard';
 import './staff-overview.css';
 
 type Destination = 'checkout' | 'sales' | 'inventory' | 'reports' | 'staff' | 'wages' | 'my-work';
@@ -187,11 +188,8 @@ export default function StaffOverview({ shop, branch, userId, userName, roleName
       </Panel>
       {canMove ? <Panel title="Stock watchlist" icon={Package} action={<Link onClick={() => openPage('inventory', undefined, true)}>Review stock</Link>}>
         <LoadError message={catalogError} />
-        {low?.length ? <ul className="pos-simple-list">{low.slice(0, 6).map(product => <li key={product.id}>
-          <button type="button" className="pos-table-product pos-product-link" onClick={() => onProduct?.(product.id)}>
-            <ProductPhoto image={product.image} /><span><strong>{product.name}</strong><small>{product.sku || 'Reorder at ' + product.reorder_level}</small></span>
-          </button><span className={`pos-badge ${product.stock <= 0 ? 'pos-tone-bad' : 'pos-tone-warn'}`}>{product.stock} left</span>
-        </li>)}</ul> : <Empty>{catalogLoading ? 'Loading catalog…' : catalogError ? 'Stock data unavailable.' : 'No items at reorder level.'}</Empty>}
+        {low?.length ? <div className="pos-dashboard-catalog">{low.slice(0, 4).map(product =>
+          <CatalogCard key={product.id} product={product} currency={shop.currency} open={() => onProduct?.(product.id)} />)}</div> : <Empty>{catalogLoading ? 'Loading catalog…' : catalogError ? 'Stock data unavailable.' : 'No items at reorder level.'}</Empty>}
       </Panel> : <Panel title="Payment breakdown" detail="Your completed sales in this period" icon={Wallet}>
         <LoadError message={report.error} />
         {report.data?.payments.length ? <ul className="pos-simple-list">{report.data.payments.map(row => <li key={row.method}>

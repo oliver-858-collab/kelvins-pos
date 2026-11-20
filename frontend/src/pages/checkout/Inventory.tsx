@@ -1,11 +1,12 @@
-import { lazy, Suspense, useCallback, useMemo, useState, type FormEvent } from 'react';
-import { Archive, ArrowLeft, Boxes, Camera, ChevronRight, Download, ImagePlus, List, Package, Plus, Search, Star, Trash2, Truck, TriangleAlert } from 'lucide-react';
+import { lazy, Suspense, useCallback, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Archive, ArrowLeft, Boxes, Camera, ChevronRight, Download, Grid2X2, ImagePlus, List, Package, Plus, Search, SquareArrowOutUpRight, Star, Trash2, Truck, TriangleAlert } from 'lucide-react';
 import { displayDay, downloadCsv, errorMessage, formatMoney } from '../../lib/business';
 import {
   addCategory, attachImage, displayImage, getCatalogOptions, getStockLedger, imagePath, makePrimaryImage,
   postStockMovement, removeImage, saveProduct, saveSupplier, signedImages, type CatalogOptions, type Product, type Shop,
 } from '../../services/checkoutService';
 import { Dialog, DialogForm, Empty, LoadError, Pagination, ProductPhoto, useData } from './WorkspaceUI';
+import CatalogCard, { stockLabel } from './CatalogCard';
 
 const ProductProfile = lazy(() => import('./ProductProfile'));
 
@@ -15,15 +16,6 @@ type Tab = 'Products' | 'Stock ledger' | 'Suppliers and categories';
 const movementNames: Record<string, string> = {
   purchase: 'Receipt', sale: 'Sale', adjustment: 'Adjustment', transfer: 'Transfer', return: 'Return',
 };
-
-export function stockLabel(product: Product) {
-  if (!product.is_active) return { label: 'Archived', tone: 'neutral' };
-  if (product.is_service) return { label: 'Service', tone: 'neutral' };
-  if (!product.track_stock) return { label: 'Untracked', tone: 'neutral' };
-  if (product.stock <= 0) return { label: 'Out of stock', tone: 'bad' };
-  if (product.stock <= product.reorder_level) return { label: 'Low stock', tone: 'warn' };
-  return { label: 'In stock', tone: 'good' };
-}
 
 function suggestedReorder(product: Product) {
   return Math.max(product.reorder_qty, product.reorder_level - product.stock + 1);
@@ -39,6 +31,9 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
   const [category, setCategory] = useState('');
   const [page, setPage] = useState(0);
   const [ledgerProduct, setLedgerProduct] = useState('');
+  const [layout, setLayout] = useState<'cards' | 'table'>('cards');
+  const [previewId, setPreviewId] = useState<string>();
+  const previewPanel = useRef<HTMLElement>(null);
   const [profileId, setProfileId] = useState<string>();
   const profile = catalog.find(product => product.id === profileId);
   const [dialog, setDialog] = useState<ProductAction>();
@@ -69,6 +64,24 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
         .some(value => value?.toLowerCase().includes(query)));
   });
   const rows = matches.slice(page * 24, (page + 1) * 24);
+  const preview = rows.find(item => item.id === previewId) ?? rows[0];
+  const categories = new Map((options.data?.categories ?? []).map(item => [item.id, item.name]));
+  for (const product of catalog) {
+    if (product.category_id && product.category?.name) categories.set(product.category_id, product.category.name);
+  }
+  function selectPreview(id: string) {
+    setPreviewId(id);
+    if (window.matchMedia('(max-width: 650px)').matches) {
+      previewPanel.current?.scrollIntoView({ block: 'start' });
+    }
+  }
+
+  function openProfile(id: string) {
+    setProfileId(id);
+    setPreviewId(id);
+    setNotice('');
+    window.scrollTo(0, 0);
+  }
   function showLedger(product: string) { setProfileId(undefined); setLedgerProduct(product); setTab('Stock ledger'); }
   function saved(text: string) { setDialog(undefined); setNotice(text); onChange(); }
 
@@ -109,8 +122,15 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
     </div>
     <LoadError message={error} retry={onChange} />
     {notice && <p className="pos-success" role="status">{notice}</p>}
-    {tab === 'Products' && <section className="pos-panel">
-      <div className="pos-toolbar">
+    {tab === 'Products' && <section className="pos-panel pos-inventory-catalog">
+      <div className="pos-panel-bar pos-catalog-heading">
+        <div><h2>Product catalog</h2><p>{loading && !catalog.length ? 'Loading stock…' : `${matches.length} matching ${matches.length === 1 ? 'item' : 'items'}`}</p></div>
+        <div className="pos-segment" aria-label="Catalog layout">
+          <button type="button" aria-pressed={layout === 'cards'} onClick={() => setLayout('cards')}><Grid2X2 size={15} /> Cards</button>
+          <button type="button" aria-pressed={layout === 'table'} onClick={() => setLayout('table')}><List size={16} /> Table</button>
+        </div>
+      </div>
+      <div className="pos-toolbar pos-catalog-filters">
         <label className="pos-search"><Search size={17} /><input aria-label="Search inventory" placeholder="Search name, SKU or barcode"
           value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} /></label>
         <select aria-label="Stock status" className="pos-select" value={status} onChange={event => { setStatus(event.target.value); setPage(0); }}>
@@ -119,7 +139,7 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
         </select>
         <select aria-label="Category" className="pos-select" value={category} onChange={event => { setCategory(event.target.value); setPage(0); }}>
           <option value="">All categories</option>
-          {(options.data?.categories ?? []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+          {[...categories].sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
         {canMove && status === 'attention' && <button className="pos-secondary" disabled={!matches.length}
           onClick={() => downloadCsv('reorder-list.csv', ['Product', 'SKU', 'On hand', 'Reorder at', 'Suggested quantity'],
@@ -134,12 +154,38 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
         ? <button className="pos-secondary" onClick={() => setDialog({ kind: 'product' })}>Create your first product</button> : undefined}>
         {loading ? 'Loading stock balances…' : catalog.length ? 'No products match these filters.' : 'This branch has no products yet.'}
       </Empty>}
-      {!!rows.length && <div className="pos-table-wrap"><table className="pos-table">
+      {preview && layout === 'cards' && <div className="pos-catalog-browse">
+        <div className="pos-catalog-cards">{rows.map(product =>
+          <CatalogCard key={product.id} product={product} currency={shop.currency} open={() => openProfile(product.id)}
+            selected={preview.id === product.id} selectPreview={() => selectPreview(product.id)} />)}</div>
+        <aside ref={previewPanel} className="pos-catalog-preview-panel" aria-label="Quick product preview" aria-live="polite">
+          <ProductPhoto image={preview.image} />
+          <div className="pos-catalog-preview-details">
+            <span className={`pos-badge pos-tone-${stockLabel(preview).tone}`}>{stockLabel(preview).label}</span>
+            <h3>{preview.name}</h3>
+            <p>{[preview.brand, preview.category?.name].filter(Boolean).join(' · ')}</p>
+            <strong>{money(preview.selling_price)}</strong>
+            {preview.description && <p className="pos-catalog-description">{preview.description}</p>}
+            <dl>
+              <div><dt>SKU</dt><dd>{preview.sku || '—'}</dd></div>
+              <div><dt>On hand</dt><dd>{preview.track_stock ? preview.stock : 'Untracked'}</dd></div>
+              <div><dt>Shelf</dt><dd>{preview.location_shelf || '—'}</dd></div>
+              {preview.track_stock && <div><dt>Reorder at</dt><dd>{preview.reorder_level}</dd></div>}
+            </dl>
+            <div className="pos-row-actions">
+              <button type="button" className="pos-primary" onClick={() => openProfile(preview.id)}>Full product profile <SquareArrowOutUpRight size={15} /></button>
+              {canManage && <button type="button" className="pos-secondary" onClick={() => setDialog({ kind: 'images', product: preview })}>
+                <Camera size={15} /> {preview.image ? 'Photos' : 'Add photos'}</button>}
+            </div>
+          </div>
+        </aside>
+      </div>}
+      {!!rows.length && layout === 'table' && <div className="pos-table-wrap"><table className="pos-table">
         <thead><tr><th>Product</th><th>Category</th><th>Selling price</th>{canMove && <th>Unit cost</th>}<th>On hand</th><th>Reorder at</th>{canMove && status === 'attention' && <th>Suggested reorder</th>}<th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>{rows.map(product => {
           const label = stockLabel(product);
           return <tr key={product.id}>
-            <th scope="row"><button type="button" className="pos-table-product pos-product-link" onClick={() => { setProfileId(product.id); setNotice(''); window.scrollTo(0, 0); }}>
+            <th scope="row"><button type="button" className="pos-table-product pos-product-link" onClick={() => openProfile(product.id)}>
               <ProductPhoto image={product.image} />
               <span>{product.name}<small>{[product.sku, product.location_shelf].filter(Boolean).join(' · ') || product.barcode || '—'}</small></span>
               <ChevronRight size={15} aria-hidden="true" />
