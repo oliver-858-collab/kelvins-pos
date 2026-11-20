@@ -8,6 +8,7 @@ import { errorMessage } from '../../lib/business';
 import { getCheckoutCatalog, getCheckoutSettings, getPersonalWorkspaceSettings, type Branch, type Shop } from '../../services/checkoutService';
 import { Dialog, Empty, LoadError, useData } from './WorkspaceUI';
 import CommandMenu, { type WorkspaceCommand } from './CommandMenu';
+import StockIndicator from './StockIndicator';
 import './workspace.css';
 
 const AdminOverview = lazy(() => import('./AdminOverview'));
@@ -76,6 +77,8 @@ export default function Workspace({ user, role, logout }: { user: User; role: Ro
   const [stockAlerts, setStockAlerts] = useState(() => new URLSearchParams(location.search).get('stock') === 'alerts');
   const [preferred, setPreferred] = useState(() => savedBranch(user.id));
   const [draft, setDraft] = useState(false);
+  const [stockRevision, setStockRevision] = useState(0);
+  const onStockChange = useCallback(() => setStockRevision(value => value + 1), []);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [logoutError, setLogoutError] = useState('');
   const setup = useData(personalOnly ? getPersonalWorkspaceSettings : getCheckoutSettings, canSell || canMove || personalOnly);
@@ -186,6 +189,8 @@ export default function Workspace({ user, role, logout }: { user: User; role: Ro
           <span>Workspace</span><b aria-hidden="true">/</b><strong>{viewTitle}</strong>
         </div>
         <div className="pos-topbar-actions">
+          {branch && allowed.includes('inventory') && <StockIndicator key={branch.id} branch={branch.id}
+            revision={stockRevision} open={() => navigate('inventory', true)} />}
           <button type="button" className="pos-command-trigger" onClick={() => setCommandOpen(true)} aria-label="Jump to page or action">
             <Search size={17} aria-hidden="true" /><span>Jump to…</span><kbd><Command size={12} aria-hidden="true" /> / Ctrl K</kbd>
           </button>
@@ -211,7 +216,7 @@ export default function Workspace({ user, role, logout }: { user: User; role: Ro
         </Suspense>}
         {setup.data && branch && <BranchWorkspace key={branch.id} shop={setup.data.shop} branch={branch}
           branches={setup.data.branches} user={user} roleName={roleName} isManager={isManager} isAdmin={isAdmin} canMove={canMove} canSell={canSell}
-          view={view} section={section} stockAlerts={stockAlerts} navigate={navigate} onDraft={setDraft} onSettings={setup.reload} />}
+          view={view} section={section} stockAlerts={stockAlerts} navigate={navigate} onDraft={setDraft} onStockChange={onStockChange} onSettings={setup.reload} />}
         {setup.data && !branch && isAdmin && <Suspense fallback={<Empty>Loading settings…</Empty>}>
           <Settings shop={setup.data.shop} onChange={setup.reload} /></Suspense>}
       </main>
@@ -219,9 +224,9 @@ export default function Workspace({ user, role, logout }: { user: User; role: Ro
   </div>;
 }
 
-function BranchWorkspace({ shop, branch, branches, user, roleName, isManager, isAdmin, canMove, canSell, view, section, stockAlerts, navigate, onDraft, onSettings }: {
+function BranchWorkspace({ shop, branch, branches, user, roleName, isManager, isAdmin, canMove, canSell, view, section, stockAlerts, navigate, onDraft, onStockChange, onSettings }: {
   shop: Shop; branch: Branch; branches: Branch[]; user: User; roleName: string; isManager: boolean; isAdmin: boolean; canMove: boolean; canSell: boolean;
-  view: View; section: string | null; stockAlerts: boolean; navigate: (view: View, alerts?: boolean, destinationSection?: string) => void; onDraft: (active: boolean) => void; onSettings: () => void;
+  view: View; section: string | null; stockAlerts: boolean; navigate: (view: View, alerts?: boolean, destinationSection?: string) => void; onDraft: (active: boolean) => void; onStockChange: () => void; onSettings: () => void;
 }) {
   const [productId, setProductId] = useState<string>();
   const [sale, setSale] = useState<string>();
@@ -230,6 +235,8 @@ function BranchWorkspace({ shop, branch, branches, user, roleName, isManager, is
   const needsCatalog = (canMove && view === 'overview') || view === 'checkout' || view === 'inventory';
   const loadCatalog = useCallback(() => getCheckoutCatalog(branch.id), [branch.id]);
   const inventory = useData(loadCatalog, needsCatalog);
+  const { reload } = inventory;
+  const reloadCatalog = useCallback(() => { reload(); onStockChange(); }, [reload, onStockChange]);
   const selectedProduct = inventory.data?.find(product => product.id === productId);
   const cashierId = canSell && !isManager ? user.id : undefined;
 
@@ -240,26 +247,26 @@ function BranchWorkspace({ shop, branch, branches, user, roleName, isManager, is
   function saleChanged(id?: string) {
     if (id) setSale(id);
     refreshSales(value => value + 1);
-    inventory.reload();
+    reloadCatalog();
   }
 
   return <Suspense fallback={<Empty>Loading {view.replace('-', ' ')}…</Empty>}>
     {view === 'overview' && isAdmin && <AdminOverview shop={shop} branch={branch.id} branchName={branch.name}
       revision={revision} catalog={inventory.data} catalogError={inventory.error} catalogLoading={inventory.loading}
-      reloadCatalog={inventory.reload} onReceipt={setSale} onProduct={setProductId}
+      reloadCatalog={reloadCatalog} onReceipt={setSale} onProduct={setProductId}
       navigate={(target, options) => navigate(target, options?.stockAlerts, options?.staffSection ?? options?.payrollStatus ?? options?.section)} />}
     {view === 'overview' && !isAdmin && <StaffOverview shop={shop} branch={branch} catalog={inventory.data}
-      catalogLoading={inventory.loading} catalogError={inventory.error} reloadCatalog={inventory.reload}
+      catalogLoading={inventory.loading} catalogError={inventory.error} reloadCatalog={reloadCatalog}
       userId={user.id} userName={user.full_name} roleName={roleName} revision={revision}
       isManager={isManager} canSell={canSell} canMove={canMove} onReceipt={setSale} onProduct={setProductId}
       openPage={(target, destination, alerts) => navigate(target, alerts, destination)} />}
     {(startedCheckout || view === 'checkout') && <div hidden={view !== 'checkout'}>
       <PointOfSale shop={shop} branch={branch.id} catalog={inventory.data} catalogError={inventory.error} loading={inventory.loading}
-        isManager={isManager} userId={user.id} onRefresh={inventory.reload} onSale={saleChanged} onDraft={onDraft}
+        isManager={isManager} userId={user.id} onRefresh={reloadCatalog} onSale={saleChanged} onDraft={onDraft}
         onInventory={() => navigate('inventory')} onProduct={setProductId} />
     </div>}
     {view === 'inventory' && <Inventory key={`${stockAlerts}-${section ?? ''}`} initialLedger={section === 'ledger'} stockAlerts={stockAlerts} shop={shop} branch={branch.id} catalog={inventory.data ?? []} loading={inventory.loading}
-      error={inventory.error} canManage={isManager} canMove={canMove} canSell={canSell} cashierId={cashierId} onChange={inventory.reload} />}
+      error={inventory.error} canManage={isManager} canMove={canMove} canSell={canSell} cashierId={cashierId} onChange={reloadCatalog} />}
     {view === 'sales' && <SalesHistory key={section ?? 'sales'} todayOnly={section === 'today'} shop={shop} branch={branch.id} isManager={isManager} onReceipt={setSale}
       revision={revision} onChange={saleChanged} />}
     {view === 'customers' && <Customers key={section ?? 'customers'} balanceOnly={section === 'balance'} shop={shop} userId={user.id} canManage={isManager} onReceipt={setSale} />}

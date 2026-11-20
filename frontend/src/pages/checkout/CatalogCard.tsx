@@ -8,7 +8,7 @@ export function stockLabel(product: Product) {
   if (product.is_service) return { label: 'Service', tone: 'neutral' };
   if (!product.track_stock) return { label: 'Untracked', tone: 'neutral' };
   if (product.stock <= 0) return { label: 'Out of stock', tone: 'bad' };
-  if (product.stock <= product.reorder_level) return { label: 'Low stock', tone: 'warn' };
+  if (product.stock <= product.reorder_level) return { label: 'Low stock', tone: 'bad' };
   return { label: 'In stock', tone: 'good' };
 }
 

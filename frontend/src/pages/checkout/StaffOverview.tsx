@@ -62,7 +62,7 @@ export default function StaffOverview({ shop, branch, userId, userName, roleName
   const hours = attendance.data?.reduce((sum, row) => sum + Number(row.hours_worked), 0);
   const openLeave = leave.data?.filter(row => row.status === 'pending').length;
   const latestPay = pay.data?.[0];
-  const low = catalog?.filter(item => item.is_active && item.track_stock && item.stock <= item.reorder_level).sort((a, b) => a.stock - b.stock);
+  const low = catalog?.filter(item => item.is_active && item.track_stock && !item.is_service && item.stock <= item.reorder_level).sort((a, b) => a.stock - b.stock);
   const stockIn = stock.data?.reduce((sum, row) => sum + row.received, 0);
   const stockOut = stock.data?.reduce((sum, row) => sum + row.issued, 0);
   const staffDays = attendance.data?.length;

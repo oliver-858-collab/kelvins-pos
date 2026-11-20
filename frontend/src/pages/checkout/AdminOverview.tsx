@@ -75,7 +75,7 @@ export default function AdminOverview({ shop, branch, branchName, revision, cata
   }, [busy, failures.length]);
 
   const day = report.data?.daily.find(entry => entry.day === today);
-  const low = catalog?.filter(item => item.is_active && item.track_stock && item.stock <= item.reorder_level)
+  const low = catalog?.filter(item => item.is_active && item.track_stock && !item.is_service && item.stock <= item.reorder_level)
     .sort((a, b) => a.stock - b.stock);
   const active = team.data?.filter(account => account.account_status === 'active');
   const roleCounts = Object.entries(active?.reduce<Record<string, number>>((counts, account) => {

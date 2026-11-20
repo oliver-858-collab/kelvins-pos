@@ -43,26 +43,32 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
 
   const summary = useMemo(() => {
     const live = catalog.filter(product => product.is_active);
-    const tracked = live.filter(product => product.track_stock);
+    const tracked = live.filter(product => product.track_stock && !product.is_service);
     return {
       products: live.length,
       stock: tracked.reduce((total, product) => total + product.stock, 0),
-      low: tracked.filter(product => product.stock <= product.reorder_level).length,
+      low: tracked.filter(product => product.stock > 0 && product.stock <= product.reorder_level).length,
+      out: tracked.filter(product => product.stock <= 0).length,
       value: tracked.reduce((total, product) => total + product.stock * product.buying_price, 0),
     };
   }, [catalog]);
 
   const matches = catalog.filter(product => {
     const query = search.trim().toLowerCase();
-    const label = stockLabel(product);
+    const tracked = product.is_active && product.track_stock && !product.is_service;
+    const out = tracked && product.stock <= 0;
+    const low = tracked && product.stock > 0 && product.stock <= product.reorder_level;
     return (status === 'all' || (status === 'active' && product.is_active)
-      || (status === 'archived' && !product.is_active) || (status === 'low' && label.tone === 'warn')
-      || (status === 'out' && label.tone === 'bad')
-      || (status === 'attention' && ['warn', 'bad'].includes(label.tone)))
+      || (status === 'archived' && !product.is_active) || (status === 'low' && low)
+      || (status === 'out' && out)
+      || (status === 'attention' && (low || out)))
       && (!category || product.category_id === category)
       && (!query || [product.name, product.sku, product.barcode, product.brand, product.location_shelf]
         .some(value => value?.toLowerCase().includes(query)));
   });
+  if (status === 'attention' || status === 'out' || status === 'low') {
+    matches.sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name));
+  }
   const rows = matches.slice(page * 24, (page + 1) * 24);
   const preview = rows.find(item => item.id === previewId) ?? rows[0];
   const categories = new Map((options.data?.categories ?? []).map(item => [item.id, item.name]));
@@ -112,7 +118,7 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
     <div className="pos-metrics">
       <div className="pos-panel pos-metric"><div>Active products <Package size={18} /></div><strong>{summary.products}</strong></div>
       <div className="pos-panel pos-metric"><div>Units on hand <Boxes size={18} /></div><strong>{summary.stock.toLocaleString('en-KE')}</strong></div>
-      <div className="pos-panel pos-metric"><div>Low or out of stock <TriangleAlert size={18} /></div><strong>{summary.low}</strong></div>
+      <div className="pos-panel pos-metric"><div>Low or out of stock <TriangleAlert size={18} /></div><strong>{summary.low + summary.out}</strong></div>
       {canMove && <div className="pos-panel pos-metric"><div>Stock value at current cost <Archive size={18} /></div><strong>{money(summary.value)}</strong></div>}
     </div>
     <div className="pos-section-tabs" aria-label="Inventory views">
@@ -122,6 +128,15 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
     </div>
     <LoadError message={error} retry={onChange} />
     {notice && <p className="pos-success" role="status">{notice}</p>}
+    {tab === 'Products' && !loading && !error && <section className={`pos-panel pos-stock-monitor ${summary.low + summary.out ? 'has-alerts' : ''}`} aria-label="Branch stock monitor">
+      <div><span className="pos-stock-monitor-icon"><TriangleAlert size={20} aria-hidden="true" /></span>
+        <div><h2>Stock monitor</h2><p>{summary.low + summary.out ? 'Items at or below their reorder level need attention.' : 'Tracked stock is above reorder levels.'}</p></div></div>
+      <div className="pos-row-actions">
+        {([['attention', 'All alerts', summary.low + summary.out], ['low', 'Low stock', summary.low], ['out', 'Out of stock', summary.out]] as const).map(([filter, title, count]) =>
+          <button type="button" key={filter} className="pos-stock-monitor-filter" aria-pressed={status === filter}
+            onClick={() => { setStatus(filter); setPage(0); }}>{title} <strong>{count}</strong></button>)}
+      </div>
+    </section>}
     {tab === 'Products' && <section className="pos-panel pos-inventory-catalog">
       <div className="pos-panel-bar pos-catalog-heading">
         <div><h2>Product catalog</h2><p>{loading && !catalog.length ? 'Loading stock…' : `${matches.length} matching ${matches.length === 1 ? 'item' : 'items'}`}</p></div>
@@ -141,11 +156,11 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
           <option value="">All categories</option>
           {[...categories].sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
         </select>
-        {canMove && status === 'attention' && <button className="pos-secondary" disabled={!matches.length}
+        {canMove && ['attention', 'low', 'out'].includes(status) && <button className="pos-secondary" disabled={!matches.length}
           onClick={() => downloadCsv('reorder-list.csv', ['Product', 'SKU', 'On hand', 'Reorder at', 'Suggested quantity'],
             matches.map(product => [product.name, product.sku, product.stock, product.reorder_level, suggestedReorder(product)]))}>
           <Download size={16} /> Export reorder list</button>}
-        {canMove && status !== 'attention' && <button className="pos-secondary" disabled={!matches.length} onClick={() => downloadCsv('inventory.csv',
+        {canMove && !['attention', 'low', 'out'].includes(status) && <button className="pos-secondary" disabled={!matches.length} onClick={() => downloadCsv('inventory.csv',
           ['Product', 'SKU', 'Barcode', 'Category', 'On hand', 'Reorder level', 'Cost', 'Selling price', 'Status'],
           matches.map(item => [item.name, item.sku, item.barcode, item.category?.name, item.track_stock ? item.stock : null,
             item.reorder_level, item.buying_price, item.selling_price, stockLabel(item).label]))}><Download size={16} /> Export</button>}
@@ -171,6 +186,7 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
               <div><dt>On hand</dt><dd>{preview.track_stock ? preview.stock : 'Untracked'}</dd></div>
               <div><dt>Shelf</dt><dd>{preview.location_shelf || '—'}</dd></div>
               {preview.track_stock && <div><dt>Reorder at</dt><dd>{preview.reorder_level}</dd></div>}
+              {canMove && stockLabel(preview).tone === 'bad' && <div><dt>Suggested reorder</dt><dd>{suggestedReorder(preview)}</dd></div>}
             </dl>
             <div className="pos-row-actions">
               <button type="button" className="pos-primary" onClick={() => openProfile(preview.id)}>Full product profile <SquareArrowOutUpRight size={15} /></button>
@@ -181,7 +197,7 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
         </aside>
       </div>}
       {!!rows.length && layout === 'table' && <div className="pos-table-wrap"><table className="pos-table">
-        <thead><tr><th>Product</th><th>Category</th><th>Selling price</th>{canMove && <th>Unit cost</th>}<th>On hand</th><th>Reorder at</th>{canMove && status === 'attention' && <th>Suggested reorder</th>}<th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th>Product</th><th>Category</th><th>Selling price</th>{canMove && <th>Unit cost</th>}<th>On hand</th><th>Reorder at</th>{canMove && ['attention', 'low', 'out'].includes(status) && <th>Suggested reorder</th>}<th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>{rows.map(product => {
           const label = stockLabel(product);
           return <tr key={product.id}>
@@ -194,7 +210,7 @@ export default function Inventory({ shop, branch, catalog, loading, error, canMa
             {canMove && <td>{money(product.buying_price)}</td>}
             <td className="pos-number">{product.track_stock ? product.stock : '—'}</td>
             <td>{product.track_stock ? product.reorder_level : '—'}</td>
-            {canMove && status === 'attention' && <td className="pos-number">{suggestedReorder(product)}</td>}
+            {canMove && ['attention', 'low', 'out'].includes(status) && <td className="pos-number">{suggestedReorder(product)}</td>}
             <td><span className={`pos-badge pos-tone-${label.tone}`}>{label.label}</span></td>
             <td><div className="pos-row-actions">
               {product.track_stock && <button className="pos-icon-button" type="button" aria-label={`View stock ledger for ${product.name}`}

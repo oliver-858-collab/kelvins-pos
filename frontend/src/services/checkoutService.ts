@@ -252,6 +252,28 @@ export async function getCheckoutCatalog(branch: string, sign = true): Promise<P
   }));
 }
 
+export async function getStockAlertSummary(branch: string) {
+  const [items, balances] = await Promise.all([
+    readPages<{ id: string; reorder_level: number }>(offset => supabase.from('products')
+      .select('id,reorder_level').eq('track_stock', true).eq('is_service', false)
+      .eq('is_active', true).eq('is_deleted', false).or(`branch_id.is.null,branch_id.eq.${branch}`)
+      .order('id').range(offset, offset + pageSize - 1)),
+    readPages<{ product_id: string; qty_on_hand: number }>(offset => supabase.from('v_stock_levels')
+      .select('product_id,qty_on_hand').eq('branch_id', branch).eq('is_active', true)
+      .in('stock_status', ['low_stock', 'out_of_stock']).order('product_id').range(offset, offset + pageSize - 1)),
+  ]);
+  const alertBalances = new Map(balances.map(row => [row.product_id, Number(row.qty_on_hand)]));
+  let low = 0;
+  let out = 0;
+  for (const { id, reorder_level } of items) {
+    const remaining = alertBalances.get(id);
+    if (remaining === undefined) continue;
+    if (remaining <= 0) out++;
+    else if (remaining <= Number(reorder_level)) low++;
+  }
+  return { low, out };
+}
+
 export type CatalogOptions = {
   categories: { id: string; name: string; description: string | null }[];
   suppliers: { id: string; name: string; contact_person: string | null; phone: string | null; email: string | null;

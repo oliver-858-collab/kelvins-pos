@@ -1,14 +1,15 @@
 import { useCallback, useState } from 'react';
-import { CalendarDays, Check, Clock3, Download, FileText, LogIn, LogOut, Plus, Search, UserCog, Users, Wallet, X } from 'lucide-react';
+import { CalendarDays, Check, Clock3, Download, FileText, Plus, Search, UserCog, Users, Wallet, X } from 'lucide-react';
 import { displayDay, downloadCsv, errorMessage, formatMoney, shiftDay, shopDay, timeOfDay } from '../../lib/business';
 import type { Branch, Shop } from '../../services/checkoutService';
 import {
-  clockStaff, cycleNames, getAttendance, getEmployment, getLeave, getOpenClock, getOwnPay, getStaffDirectory, wageNames,
+  cycleNames, getAttendance, getEmployment, getLeave, getOwnPay, getStaffDirectory, wageNames,
   requestLeave, reviewAttendance, reviewLeave, saveAttendance, saveEmployment,
   type Attendance, type LeaveRow, type StaffRow,
 } from '../../services/relationsService';
 import StaffAccess from '../admin/staff/StaffAccess';
 import { Payslip } from './Wages';
+import TimeClock from './TimeClock';
 import { DateRange, Dialog, DialogForm, Empty, LoadError, useData } from './WorkspaceUI';
 
 const attendanceStatuses = { present: 'Present', late: 'Late', half_day: 'Half day', absent: 'Absent', leave: 'Leave', holiday: 'Holiday' };
@@ -179,11 +180,11 @@ function AttendanceTable({ rows, shop, employees, onEdit, onReview, reviewing }:
   if (!rows?.length) return <Empty>{rows ? 'No attendance in this period.' : 'Loading attendance…'}</Empty>;
   const showTime = (value: string | null) => value ? timeOfDay(value, shop.timezone) : '—';
   return <div className="pos-table-wrap"><table className="pos-table">
-    <thead><tr>{employees && <th>Employee</th>}<th>Date</th><th>Status</th><th>Clock in</th><th>Clock out</th><th>Hours</th><th>Review</th>{onEdit && <th />}</tr></thead>
+    <thead><tr>{employees && <th>Employee</th>}<th>Date</th><th>Status</th><th>Clock in</th><th>Clock out</th><th>Break</th><th>Hours</th><th>Review</th>{onEdit && <th />}</tr></thead>
     <tbody>{rows.map(item => <tr key={item.id}>
       {employees && <th scope="row">{employees.find(member => member.id === item.employee_id)?.full_name ?? 'Former employee'}</th>}
       <td>{displayDay(item.date)}</td><td>{attendanceStatuses[item.status as keyof typeof attendanceStatuses] ?? item.status}</td>
-      <td>{showTime(item.clock_in)}</td><td>{showTime(item.clock_out)}</td><td className="pos-number">{item.hours_worked.toFixed(2)}</td>
+      <td>{showTime(item.clock_in)}</td><td>{showTime(item.clock_out)}</td><td>{item.break_start ? `${showTime(item.break_start)} – ${showTime(item.break_end)}` : '—'}</td><td className="pos-number">{item.hours_worked.toFixed(2)}</td>
       <td><span className={`pos-badge ${item.reviewed_at ? 'pos-tone-good' : 'pos-tone-warn'}`}>{item.reviewed_at ? 'Reviewed' : item.clock_in && !item.clock_out ? 'On shift' : 'Pending'}</span></td>
       {onEdit && <td><div className="pos-row-actions">
         <button className="pos-secondary" disabled={!!item.shift_id && !item.clock_out} onClick={() => onEdit(item)}>Edit</button>
@@ -262,41 +263,20 @@ function LeaveTable({ rows, employees, onReview }: {
 export function MyWork({ shop, branch, userId, userName, initialSection }: { shop: Shop; branch?: string; userId: string; userName: string; initialSection?: string | null }) {
   const [tab, setTab] = useState(initialSection === 'leave' ? 'Leave' : initialSection === 'payslips' ? 'Payslips' : 'Attendance');
   const [leaveDialog, setLeaveDialog] = useState<string>();
-  const [clockBusy, setClockBusy] = useState(false);
-  const [error, setError] = useState('');
   const [slip, setSlip] = useState<Awaited<ReturnType<typeof getOwnPay>>[number]>();
   const today = shopDay(shop.timezone);
   const [range, setRange] = useState({ start: shiftDay(today, -29), end: today });
   const profile = useData(useCallback(() => getEmployment(userId), [userId]));
-  const clock = useData(useCallback(() => getOpenClock(userId), [userId]));
   const attendance = useData(useCallback(() => getAttendance(range.start, range.end, undefined, userId), [range.start, range.end, userId]), tab === 'Attendance');
   const leave = useData(useCallback(() => getLeave(userId), [userId]), tab === 'Leave');
   const pay = useData(getOwnPay, tab === 'Payslips');
   const money = formatMoney(shop.currency);
 
-  async function toggleClock() {
-    const clockBranch = clock.data?.branch_id || branch;
-    if (!clockBranch || clockBusy || clock.error || clock.loading) return;
-    setClockBusy(true); setError('');
-    try { await clockStaff(clockBranch, clock.data ? 'out' : 'in'); clock.reload(); attendance.reload(); }
-    catch (cause) { setError(errorMessage(cause)); }
-    finally { setClockBusy(false); }
-  }
   return <>
     <div className="pos-heading"><div><h1>My work</h1><p>Clock in and out, request leave and view your wage statements.</p></div></div>
-    <LoadError message={error || profile.error || clock.error} />
-    <section className="pos-panel pos-clock-card"><div className="pos-panel-bar"><div>
-      <h2><Clock3 size={18} /> {clock.data ? 'On shift' : 'Off shift'}</h2>
-      <p>{clock.data?.clock_in ? 'Clocked in at ' + timeOfDay(clock.data.clock_in, shop.timezone)
-        : profile.data && !branch ? 'Ask your administrator to assign your home branch before you clock in.'
-        : profile.loading ? 'Loading employee record…'
-          : profile.data ? `${profile.data.employee_number} · ${profile.data.position || 'Staff'}`
-            : 'An administrator needs to set up your employee record before you can clock in.'}</p>
-    </div>
-      {profile.data && <button className="pos-primary" disabled={clockBusy || clock.loading || !!clock.error || (!branch && !clock.data?.branch_id)}
-        onClick={() => void toggleClock()}>{clock.data ? <LogOut size={17} /> : <LogIn size={17} />}
-        {clockBusy ? 'Saving…' : clock.data ? 'Clock out' : 'Clock in'}</button>}
-    </div></section>
+    <LoadError message={profile.error} retry={profile.reload} />
+    <TimeClock branch={branch} userId={userId} timezone={shop.timezone} profile={profile.data}
+      profileLoading={profile.loading} onRecorded={attendance.reload} />
     <div className="pos-section-tabs">{['Attendance', 'Leave', 'Payslips'].map(item =>
       <button key={item} aria-pressed={tab === item} onClick={() => setTab(item)}>{item}</button>)}</div>
     {tab === 'Attendance' && <section className="pos-panel"><div className="pos-panel-bar"><h2>My timesheet</h2></div>
@@ -306,8 +286,8 @@ export function MyWork({ shop, branch, userId, userName, initialSection }: { sho
           <button type="button" key={days} aria-pressed={range.start === shiftDay(today, 1 - days) && range.end === today}
             onClick={() => setRange({ start: shiftDay(today, 1 - days), end: today })}>{days}d</button>)}</div>
         <button type="button" className="pos-secondary" disabled={attendance.loading || !!attendance.error || !attendance.data?.length}
-          onClick={() => downloadCsv(`my-attendance-${range.start}-${range.end}.csv`, ['Date', 'Status', 'Clock in', 'Clock out', 'Hours', 'Reviewed'],
-            (attendance.data ?? []).map(row => [row.date, row.status, row.clock_in, row.clock_out, row.hours_worked, row.reviewed_at ? 'Yes' : 'No']))}>
+          onClick={() => downloadCsv(`my-attendance-${range.start}-${range.end}.csv`, ['Date', 'Status', 'Clock in', 'Clock out', 'Break start', 'Break end', 'Hours', 'Reviewed'],
+            (attendance.data ?? []).map(row => [row.date, row.status, row.clock_in, row.clock_out, row.break_start, row.break_end, row.hours_worked, row.reviewed_at ? 'Yes' : 'No']))}>
           <Download size={16} /> Export timesheet</button>
       </div>
       <LoadError message={attendance.error} retry={attendance.reload} /><AttendanceTable rows={attendance.data} shop={shop} /></section>}

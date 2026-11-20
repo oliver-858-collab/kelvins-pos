@@ -670,3 +670,27 @@
   .pos-catalog-cards { grid-template-columns: repeat(auto-fill,minmax(min(100%,145px),1fr)); }
   .pos-catalog-preview-panel { position: static; }
 }
+
+.pos-stock-indicator, .pos-stock-monitor-filter { display: inline-flex; align-items: center; gap: .3rem; border: 1px solid var(--line); border-radius: .55rem; padding: .4rem .55rem; color: var(--muted); font-size: .77rem; font-weight: 650; white-space: nowrap; }
+.pos-stock-indicator.has-alerts { color: #a02238; background: #fff0f2; border-color: #f1bdc5; }
+.pos-stock-indicator strong, .pos-stock-monitor-filter strong { border-radius: 99px; background: #a02238; color: #fff; min-width: 1.25rem; padding: .04rem .28rem; text-align: center; }
+.pos-stock-monitor { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: .8rem; padding: .85rem 1rem; margin-bottom: .85rem; }
+.pos-stock-monitor.has-alerts { border-color: #f1bdc5; background: #fffbfc; }
+.pos-stock-monitor > div:first-child { display: flex; gap: .6rem; align-items: center; }
+.pos-stock-monitor-icon { display: grid; place-items: center; width: 35px; height: 35px; border-radius: .6rem; background: #f4f1fa; flex-shrink: 0; }
+.pos-stock-monitor.has-alerts .pos-stock-monitor-icon { background: #ffe7ec; color: #a02238; }
+.pos-stock-monitor h2 { font-weight: 740; }
+.pos-stock-monitor p { font-size: .77rem; color: var(--muted); }
+.pos-stock-monitor-filter[aria-pressed="true"] { background: #ffe7ec; border-color: #f1bdc5; color: #8a1d31; }
+.pos-shell .pos-tone-bad { background: #ffe9ed; color: #982338; }
+.pos-time-clock { overflow: hidden; background: linear-gradient(140deg, #fff, #f8f5ff); }
+.pos-time-clock-totals { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: .55rem; margin: 0 1rem .65rem; }
+.pos-time-clock-totals > div { background: #fff; border: 1px solid var(--line); border-radius: .65rem; padding: .65rem; }
+.pos-time-clock-totals dt { font-size: .74rem; color: var(--muted); }
+.pos-time-clock-totals dd { font-size: clamp(.92rem, 2.5vw, 1.45rem); font-weight: 750; font-variant-numeric: tabular-nums; }
+.pos-time-clock-actions, .pos-time-clock-note { padding: .2rem 1rem .8rem; }
+.pos-time-clock-note { font-size: .8rem; color: var(--muted); }
+@media (max-width: 650px) {
+  .pos-stock-indicator > span { display: none; }
+  .pos-stock-indicator { padding-inline: .35rem; }
+}

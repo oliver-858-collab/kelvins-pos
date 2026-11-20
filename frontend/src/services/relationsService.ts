@@ -126,10 +126,10 @@ export async function getAttendance(start: string, end: string, branch?: string,
 
 export async function getOpenClock(employee: string) {
   const { data, error } = await supabase.from('attendance')
-    .select('id,clock_in,branch_id').eq('employee_id', employee).not('shift_id', 'is', null)
+    .select('id,clock_in,branch_id,break_start,break_end').eq('employee_id', employee).not('shift_id', 'is', null)
     .is('clock_out', null).order('date', { ascending: false }).limit(1).maybeSingle();
   if (error) throw error;
-  return data as { id: string; clock_in: string; branch_id: string | null } | null;
+  return data as Pick<Attendance, 'id' | 'clock_in' | 'branch_id' | 'break_start' | 'break_end'> | null;
 }
 
 export function saveEmployment(employee: string, form: FormData) {
@@ -144,8 +144,10 @@ export function saveEmployment(employee: string, form: FormData) {
   });
 }
 
-export function clockStaff(branch: string, event: 'in' | 'out') {
-  return rpc<string>('staff_clock', { p_branch: branch, p_event: event });
+export type TimeClockEvent = 'in' | 'out' | 'break_start' | 'break_end';
+
+export function clockStaff(branch: string | null, entry: string | null, event: TimeClockEvent) {
+  return rpc<string>('staff_clock_event', { p_branch: branch, p_attendance: entry, p_event: event });
 }
 
 export function saveAttendance(branch: string, form: FormData) {
