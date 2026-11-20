@@ -1,0 +1,5 @@
+project_id = "kelvins-pos"
+
+# The registrar validates the project's publishable key and applies database-backed quotas.
+[functions.register-staff]
+verify_jwt = false
