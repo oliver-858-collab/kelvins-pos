@@ -1,0 +1,16 @@
+# Local configuration, generated files and database fixtures
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+.vercel/
+supabase/.temp/
+supabase/demo-seed.sql
+
+# Local screenshots and workspace settings
+/*preview*.png
+/kelvin-*.png
+/.agents/
+/.aws/
+/.codex/
